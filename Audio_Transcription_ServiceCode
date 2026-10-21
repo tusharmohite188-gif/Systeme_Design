@@ -1,0 +1,64 @@
+Audio Transcription API — System Design Assignment
+Overview
+This repository is a small FastAPI starter project for an audio transcription service. It demonstrates the API contract, asynchronous job lifecycle, timestamped transcript response format, and basic local persistence. It is an assignment/demo scaffold, not a production-ready deployment.
+
+For production, replace the in-process background task and local folders with a durable queue (Celery + Redis, Azure Service Bus, or SQS), object storage (Azure Blob Storage or S3), and PostgreSQL. Run transcription in separate workers with bounded concurrency.
+Architecture
+1. Client uploads an audio file to POST /transcriptions.
+2. API validates the extension and size, assigns a UUID job ID, stores the file, and returns 202 Accepted.
+3. A background task transcribes the file and updates job status.
+4. Client polls GET /transcriptions/{job_id} or requests GET /transcriptions/{job_id}/transcript.
+5. Transcription failures are recorded and can be retried through POST /transcriptions/{job_id}/retry.
+Production design decisions
+- Concurrent uploads: asynchronous FastAPI requests; per-file size limits; queue-based work dispatch; configurable worker concurrency and rate limits.
+- Storage: audio in object storage; metadata/status in PostgreSQL; transcript segments as JSON (or object storage for large results).
+- Retries: retry transient errors with exponential backoff and jitter; cap attempts; use idempotency/job IDs; route exhausted jobs to a dead-letter queue.
+- Recovery: durable queue acknowledgements/visibility timeouts and worker health checks allow unfinished work to be reprocessed after a worker crash.
+- Security: authentication/authorization, TLS, encryption at rest, private storage, short-lived signed URLs where needed, audit logs, retention/deletion policies.
+- Observability: structured logs, metrics for queue depth/latency/failure rate, tracing, and alerts.
+- Long audio: chunk audio into manageable windows, preserve offsets, combine timestamped segments, and clean temporary files after completion.
+API
+Method	Endpoint	Purpose
+GET	/health	Health check
+POST	/transcriptions	Upload audio and create a job
+GET	/transcriptions/{job_id}	Get status and available result
+GET	/transcriptions/{job_id}/transcript	Get timestamped transcript
+POST	/transcriptions/{job_id}/retry	Retry a failed job
+DELETE	/transcriptions/{job_id}	Delete job metadata and local audio
+
+
+Transcript response example
+{
+  "job_id": "d6e2...",
+  "status": "completed",
+  "segments": [
+    {"start": 0.0, "end": 2.4, "text": "Hello, everyone."},
+    {"start": 2.4, "end": 5.1, "text": "Thanks for joining."}
+  ]
+}
+Run locally
+Requires Python 3.10+.
+python -m venv .venv
+# Windows:
+.venv\\Scripts\\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+Open the interactive API docs at http://127.0.0.1:8000/docs.
+
+Upload a supported file using the docs or curl:
+curl -X POST "http://127.0.0.1:8000/transcriptions" \
+  -F "file=@sample.wav"
+Important implementation note
+The transcribe_audio() function is intentionally a stub that returns a demo segment. Connect it to a real transcription engine/provider (for example, faster-whisper or a cloud speech API) before describing this as a working speech-to-text implementation. The included background task is suitable only for a small demo: in-process tasks can be lost on process restart and do not provide durable queue guarantees. The README's production architecture describes the recommended approach.
+Suggested Git repository steps
+Create an empty GitHub repository, then run:
+git init
+git add .
+git commit -m "Add audio transcription API system design"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/audio-transcription-service.git
+git push -u origin main
+Replace the URL with your actual repository URL.
